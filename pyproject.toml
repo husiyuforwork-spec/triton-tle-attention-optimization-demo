@@ -1,0 +1,22 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "triton-tle-attention-optimization-demo"
+version = "0.1.0"
+description = "Triton-TLE Attention kernel optimization and Nsight Compute demo"
+requires-python = ">=3.12,<3.13"
+dependencies = []
+
+[project.optional-dependencies]
+experiment = [
+    "torch==2.7.0",
+    "triton==3.3.0",
+]
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
