@@ -22,7 +22,7 @@ This repository accompanies the technical presentation **“Hands-on Optimizatio
 
 ## Overview
 
-The demo focuses on the `uniform_4096` workload and illustrates how different data-layout strategies affect an FP8 Attention kernel. It includes source code, independent benchmark entry points, pinned experiment dependencies, and `.ncu-rep` reports for post-presentation review and study.
+The demo compares the pre-optimization RS-WGMMA implementation with the optimized Transposed-Memdesc implementation. RS-WGMMA loads the V tile into registers and performs an explicit register-level transpose before register-source WGMMA, while Transposed-Memdesc expresses the transposed layout through a memory descriptor and reduces the shared-memory transpose traffic before issuing the same WGMMA computation. It includes source code, independent benchmark entry points, pinned experiment dependencies, and `.ncu-rep` reports for post-presentation review and study.
 
 ## Implementation Comparison
 
@@ -32,6 +32,19 @@ The demo focuses on the `uniform_4096` workload and illustrates how different da
 | Transposed-Memdesc | Transposed memory descriptor | WGMMA register-source |
 
 Both implementations use the same `uniform_4096` workload, enabling direct comparison of Kernel Duration, instruction counts, shared-memory traffic, bank conflicts, occupancy, and memory throughput in Nsight Compute.
+
+## Workload Configuration
+
+The demo uses the following fixed `uniform_4096` KV-cache configuration:
+
+| Parameter | Value |
+|---|---:|
+| Batch size | 64 sequences |
+| KV-cache length | 4096 tokens per sequence |
+| Query tokens per decode step | 1 |
+| Query heads | 8 |
+| KV heads | 1 |
+| Head dimension | 128 |
 
 ## Performance Materials
 
@@ -92,31 +105,23 @@ Pinned versions are recorded in `requirements-experiment.txt`.
 ### Run the benchmarks
 
 ```bash
-python benchmark/bench_rswgmma.py \
-  --cases uniform_4096 --layout NHD \
-  --warmup 50 --iters 300 --repeat 5
+python -m pytest -s benchmark/bench_rswgmma.py::test_rswgmma_uniform4096
 
-python benchmark/bench_memdesc_transpose.py \
-  --cases uniform_4096 --layout NHD \
-  --warmup 50 --iters 300 --repeat 5
+python -m pytest -s benchmark/bench_memdesc_transpose.py::test_memdesc_transpose_uniform4096
 ```
 
 ## Reproduce NCU Reports
 
 ```bash
-ncu --set full --kernel-name-base function \
+HPC_OPS_WARMUP=1 HPC_OPS_ITERS=1 ncu --set full --kernel-name-base function \
   -k regex:rswgmma_uniform4096_kernel -c 1 -f \
   -o reports/rswgmma_uniform4096 \
-  python benchmark/bench_rswgmma.py \
-  --cases uniform_4096 --layout NHD \
-  --no-graph --warmup 1 --iters 1 --repeat 1
+  python -m pytest -s benchmark/bench_rswgmma.py::test_rswgmma_uniform4096
 
-ncu --set full --kernel-name-base function \
+HPC_OPS_WARMUP=1 HPC_OPS_ITERS=1 ncu --set full --kernel-name-base function \
   -k regex:memdesc_transpose_uniform4096_kernel -c 1 -f \
   -o reports/memdesc_transpose_uniform4096 \
-  python benchmark/bench_memdesc_transpose.py \
-  --cases uniform_4096 --layout NHD \
-  --no-graph --warmup 1 --iters 1 --repeat 1
+  python -m pytest -s benchmark/bench_memdesc_transpose.py::test_memdesc_transpose_uniform4096
 ```
 
-`-c 1`, `--warmup 1`, and `--iters 1` are intended for lightweight report generation. For standalone performance measurement without NCU, use larger warmup, iteration, and repeat counts.
+Set `HPC_OPS_WARMUP=1` and `HPC_OPS_ITERS=1` for a lightweight NCU run; the default values are suitable for standalone timing.

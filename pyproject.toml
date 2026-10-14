@@ -13,6 +13,7 @@ dependencies = []
 experiment = [
     "torch==2.7.0",
     "triton==3.3.0",
+    "pytest>=8,<9",
 ]
 
 [tool.setuptools]

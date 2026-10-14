@@ -22,7 +22,7 @@
 
 ## 项目简介
 
-本 Demo 聚焦 `uniform_4096` 工作负载，用于观察不同数据布局处理方式对 FP8 Attention kernel 的影响。仓库包含源码、独立 benchmark、固定实验依赖和可直接打开的 `.ncu-rep` 报告，便于在技术汇报后进行复核和学习。
+本 Demo 用于对比优化前的 RS-WGMMA 实现与优化后的 Transposed-Memdesc 实现：RS-WGMMA 将 V tile 加载至寄存器，执行显式寄存器级转置后使用 register-source WGMMA；Transposed-Memdesc 则通过 memory descriptor 表达转置后的数据布局，减少转置过程中的 shared-memory 数据搬运，再执行相同的 WGMMA 计算。仓库包含源码、独立 benchmark、固定实验依赖和可直接打开的 `.ncu-rep` 报告，便于在技术汇报后进行复核和学习。
 
 ## 实现对比
 
@@ -32,6 +32,19 @@
 | Transposed-Memdesc | 转置数据描述符 | WGMMA register-source |
 
 两种实现使用相同的 `uniform_4096` 场景，便于对比 Kernel Duration、指令数量、Shared Memory 访问、Bank Conflict、Occupancy 和内存吞吐等 NCU 指标。
+
+## 工作负载配置
+
+本 Demo 使用固定的 `uniform_4096` KV cache 配置：
+
+| 参数 | 配置 |
+|---|---:|
+| Batch size | 64 条序列 |
+| KV cache 长度 | 每条序列 4096 个 token |
+| 每次 decode 的 query token 数 | 1 |
+| Query heads | 8 |
+| KV heads | 1 |
+| Head dimension | 128 |
 
 ## 性能分析材料
 
@@ -92,31 +105,23 @@ pip install -e ".[experiment]"
 ### 运行 benchmark
 
 ```bash
-python benchmark/bench_rswgmma.py \
-  --cases uniform_4096 --layout NHD \
-  --warmup 50 --iters 300 --repeat 5
+python -m pytest -s benchmark/bench_rswgmma.py::test_rswgmma_uniform4096
 
-python benchmark/bench_memdesc_transpose.py \
-  --cases uniform_4096 --layout NHD \
-  --warmup 50 --iters 300 --repeat 5
+python -m pytest -s benchmark/bench_memdesc_transpose.py::test_memdesc_transpose_uniform4096
 ```
 
 ## 复现 NCU 报告
 
 ```bash
-ncu --set full --kernel-name-base function \
+HPC_OPS_WARMUP=1 HPC_OPS_ITERS=1 ncu --set full --kernel-name-base function \
   -k regex:rswgmma_uniform4096_kernel -c 1 -f \
   -o reports/rswgmma_uniform4096 \
-  python benchmark/bench_rswgmma.py \
-  --cases uniform_4096 --layout NHD \
-  --no-graph --warmup 1 --iters 1 --repeat 1
+  python -m pytest -s benchmark/bench_rswgmma.py::test_rswgmma_uniform4096
 
-ncu --set full --kernel-name-base function \
+HPC_OPS_WARMUP=1 HPC_OPS_ITERS=1 ncu --set full --kernel-name-base function \
   -k regex:memdesc_transpose_uniform4096_kernel -c 1 -f \
   -o reports/memdesc_transpose_uniform4096 \
-  python benchmark/bench_memdesc_transpose.py \
-  --cases uniform_4096 --layout NHD \
-  --no-graph --warmup 1 --iters 1 --repeat 1
+  python -m pytest -s benchmark/bench_memdesc_transpose.py::test_memdesc_transpose_uniform4096
 ```
 
-`-c 1`、`--warmup 1` 和 `--iters 1` 用于生成轻量级复现报告；如需稳定的性能统计，可在不使用 NCU 时提高 warmup、iters 和 repeat。
+进行轻量级 NCU 采样时设置 `HPC_OPS_WARMUP=1` 和 `HPC_OPS_ITERS=1`；独立计时时使用默认值即可。

@@ -1,6 +1,7 @@
 # Verified experiment baseline for uniform_4096 NCU runs.
 torch==2.7.0
 triton==3.3.0
+pytest>=8,<9
 # FlagTree is project-specific and is recorded with its source revision:
 # FlagTree 0.6.0+git367dc579
 # Install it using the project's supported package/build command.
