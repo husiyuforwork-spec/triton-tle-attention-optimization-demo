@@ -4,36 +4,26 @@ from __future__ import annotations
 import os
 import sys
 from pathlib import Path
-from types import SimpleNamespace
 
 import pytest
 import torch
 import triton
 from triton.tools.tensor_descriptor import TensorDescriptor
 
-PROJECT_ROOT = Path(os.environ.get("HPC_OPS_ROOT", Path(__file__).resolve().parents[1]))
-ATTENTION_BENCH_DIR = PROJECT_ROOT / "benchmark" / "attention_decode"
-sys.path.insert(0, str(ATTENTION_BENCH_DIR))
+SRC_DIR = Path(__file__).resolve().parents[1] / "src"
+sys.path.insert(0, str(SRC_DIR))
 
-from bench_attention_decode_fp8_tle_v35_task_aware_fused import (  # noqa: E402
+from hpc_ops_attention.assign_task import (  # noqa: E402
     BLOCK_SIZE,
-    DEFAULT_HEAD_DIM,
-    DEFAULT_KV_HEADS,
-    DEFAULT_Q_HEADS,
+    CLUSTER_MESH,
+    HEAD_DIM,
+    NUM_QUERY_HEADS,
     TILE_N,
-    _make_inputs_compat,
+    make_uniform4096_workload,
 )
-from bench_attention_decode_fp8_tle_v43_cluster8_owner_local_fused import (  # noqa: E402
-    V43_CLUSTER_MESH,
-    prepare_v43_workspace,
-)
-
-KERNEL_DIR = Path(__file__).resolve().parents[1] / "src" / "hpc_ops_attention"
-sys.path.insert(0, str(KERNEL_DIR))
-from rswgmma_uniform4096 import rswgmma_uniform4096_kernel  # noqa: E402
+from hpc_ops_attention.rswgmma_uniform4096 import rswgmma_uniform4096_kernel  # noqa: E402
 
 
-CASE_NAME = "uniform_4096"
 WARMUP = int(os.environ.get("HPC_OPS_WARMUP", "50"))
 ITERATIONS = int(os.environ.get("HPC_OPS_ITERS", "300"))
 
@@ -47,26 +37,21 @@ def _descriptors(inputs):
 
 
 def _build_workload():
-    args = SimpleNamespace(
-        num_head_kv=DEFAULT_KV_HEADS,
-        num_head_q=DEFAULT_Q_HEADS,
-        head_dim=DEFAULT_HEAD_DIM,
-    )
-    inputs = _make_inputs_compat(args, CASE_NAME)
+    inputs, workspace = make_uniform4096_workload()
     k_desc, v_desc = _descriptors(inputs)
-    workspace = prepare_v43_workspace(inputs, chunk_tokens=512)
 
     def invoke():
-        ws = workspace.base
         rswgmma_uniform4096_kernel[(workspace.num_clusters,)](
-            ws.q_4d, k_desc, v_desc, inputs.block_ids, ws.task_map, ws.q_scale_3d,
-            inputs.k_scale, inputs.v_scale, ws.out, mesh=V43_CLUSTER_MESH,
-            B=inputs.num_batch, H_Q=inputs.q.shape[1], HEADS_PER_GROUP=ws.heads_per_group,
-            D=inputs.q.shape[2], DV=inputs.v_cache.shape[3], BLOCK_SIZE=BLOCK_SIZE,
+            workspace.q_4d, k_desc, v_desc, inputs.block_ids, workspace.task_map,
+            workspace.q_scale_3d, inputs.k_scale, inputs.v_scale, workspace.out,
+            mesh=CLUSTER_MESH, B=inputs.num_batch, H_Q=NUM_QUERY_HEADS,
+            HEADS_PER_GROUP=workspace.heads_per_group, D=HEAD_DIM, DV=HEAD_DIM,
+            BLOCK_SIZE=BLOCK_SIZE,
             MAX_BLOCKS=inputs.block_ids.shape[1], BLOCK_N=TILE_N,
-            Q_STRIDE_B=ws.q_4d.stride(0), Q_STRIDE_H=ws.q_4d.stride(2),
-            QS_STRIDE_B=ws.q_scale_3d.stride(0), QS_STRIDE_H=ws.q_scale_3d.stride(2),
-            O_STRIDE_B=ws.out.stride(0), O_STRIDE_H=ws.out.stride(2),
+            Q_STRIDE_B=workspace.q_4d.stride(0), Q_STRIDE_H=workspace.q_4d.stride(2),
+            QS_STRIDE_B=workspace.q_scale_3d.stride(0),
+            QS_STRIDE_H=workspace.q_scale_3d.stride(2),
+            O_STRIDE_B=workspace.out.stride(0), O_STRIDE_H=workspace.out.stride(2),
             num_ctas=1, num_warps=4, num_stages=3, launch_pdl=False,
         )
 

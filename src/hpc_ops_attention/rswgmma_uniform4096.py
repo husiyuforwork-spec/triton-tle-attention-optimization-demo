@@ -1,4 +1,4 @@
-"""v52: v43 cluster decode with direct NHD/HND descriptor fragments.
+"""Uniform_4096 RS-WGMMA Attention decode kernel.
 
 Each CTA computes one 512-token fine-grained task and publishes its normalized
 partial to its own shared-memory buffer.  Rank 0 remotely reads ranks 1-7 and
@@ -8,10 +8,8 @@ the cluster grows from four to eight ranks.
 import triton
 import triton.language as tl
 import triton.experimental.tle.language as tle
-TASK_STRIDE = 12
-TASK_SLOTS = 2
-ROWS_Q = 8
-CLUSTER_SIZE = 8
+from .assign_task import CLUSTER_SIZE, ROWS_Q, TASK_SLOTS, TASK_STRIDE
+
 _TASK_STRIDE_JIT = tl.constexpr(TASK_STRIDE)
 _TASK_SLOTS_JIT = tl.constexpr(TASK_SLOTS)
 _ROWS_Q_JIT = tl.constexpr(ROWS_Q)

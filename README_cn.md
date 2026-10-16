@@ -71,6 +71,7 @@ triton-tle-attention-optimization-demo/
 │   └── memdesc_transpose_uniform4096.ncu-rep
 └── src/
     └── hpc_ops_attention/
+        ├── assign_task.py
         ├── __init__.py
         ├── rswgmma_uniform4096.py
         └── memdesc_transpose_uniform4096.py
